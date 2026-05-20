@@ -7,7 +7,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 TRANSCRIBE="$REPO_DIR/scripts/transcribe.sh"
 
-SAMPLE="${1:-/home/marcus/whisper.cpp/samples/jfk.wav}"
+SAMPLE="${1:-}"
+if [[ -z "$SAMPLE" ]]; then
+  # Look for a sample in common locations
+  for candidate in \
+    "$(dirname "$SCRIPT_DIR")/assets/jfk.wav" \
+    /usr/share/qwen3-asr/samples/jfk.wav \
+    ~/whisper.cpp/samples/jfk.wav; do
+    if [[ -f "$candidate" ]]; then SAMPLE="$candidate"; break; fi
+  done
+fi
 PASS=0
 FAIL=0
 
@@ -32,11 +41,11 @@ echo "=== Qwen3-ASR smoke test ==="
 echo "Sample: $SAMPLE"
 echo
 
-if [[ ! -f "$SAMPLE" ]]; then
-  echo "ERROR: sample file not found: $SAMPLE" >&2
-  echo "Download it with:" >&2
-  echo "  wget -P /home/marcus/whisper.cpp/samples \\" >&2
-  echo "    https://github.com/ggerganov/whisper.cpp/raw/master/samples/jfk.wav" >&2
+if [[ -z "$SAMPLE" || ! -f "$SAMPLE" ]]; then
+  echo "ERROR: no sample file found." >&2
+  echo "Provide a WAV file as argument, or download the JFK sample:" >&2
+  echo "  wget -O /tmp/jfk.wav https://github.com/ggerganov/whisper.cpp/raw/master/samples/jfk.wav" >&2
+  echo "  ./tests/smoke.sh /tmp/jfk.wav" >&2
   exit 1
 fi
 
