@@ -54,13 +54,21 @@ def translate_with_whisper_server(audio_file: str) -> str:
             return resp.json().get('text', '').strip()
     except ImportError:
         pass
-    # Fallback: curl
+    except (KeyError, ValueError) as e:
+        raise RuntimeError(f'whisper-server returned unexpected JSON: {e}') from e
+
+    # Last-resort curl fallback (requests not installed).
+    # Note: filenames containing ';' may confuse curl's -F parser.
+    # Install 'requests' via setup/setup_venv.sh to avoid this path.
     result = subprocess.run(
         ['curl', '-sS', '--max-time', '120', '-X', 'POST', url,
          '-F', f'file=@{audio_file}', '-F', 'model=whisper-1'],
         capture_output=True, text=True, check=True,
     )
-    return json.loads(result.stdout).get('text', '').strip()
+    try:
+        return json.loads(result.stdout).get('text', '').strip()
+    except (json.JSONDecodeError, KeyError) as e:
+        raise RuntimeError(f'whisper-server returned unexpected response: {e}') from e
 
 
 if len(sys.argv) < 2:

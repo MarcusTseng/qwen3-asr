@@ -26,11 +26,17 @@ if [[ ! -f "$INPUT_FILE" ]]; then
   echo "Error: input file '$INPUT_FILE' not found." >&2; exit 1
 fi
 
-TEMP_WAV="$(mktemp --suffix=.wav)"
+# Use portable mktemp pattern (--suffix is GNU-only)
+TEMP_WAV="$(mktemp /tmp/qwen3-asr-local.XXXXXX.wav)"
 cleanup() { rm -f "$TEMP_WAV"; }
 trap cleanup EXIT
 
-ffmpeg -y -i "$INPUT_FILE" -ar 16000 -ac 1 "$TEMP_WAV" >/dev/null 2>&1
+# If ffmpeg fails (corrupt file, unsupported format), warn and try anyway with
+# the original file — whisper-server accepts many formats natively.
+if ! ffmpeg -y -i "$INPUT_FILE" -ar 16000 -ac 1 "$TEMP_WAV" >/dev/null 2>&1; then
+  echo "Warning: ffmpeg normalization failed; will try original file as fallback input" >&2
+  TEMP_WAV="$INPUT_FILE"
+fi
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
@@ -49,4 +55,11 @@ fi
 curl -sS --max-time 300 -X POST "$WHISPER_URL" \
   -F "file=@$INPUT_FILE" \
   -F "model=whisper-1" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('text','').strip())"
+  | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('text', '').strip())
+except (json.JSONDecodeError, KeyError):
+    print('Error: whisper-server returned unexpected response', file=sys.stderr)
+    sys.exit(1)
+"

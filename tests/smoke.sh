@@ -13,7 +13,7 @@ if [[ -z "$SAMPLE" ]]; then
   for candidate in \
     "$(dirname "$SCRIPT_DIR")/assets/jfk.wav" \
     /usr/share/qwen3-asr/samples/jfk.wav \
-    ~/whisper.cpp/samples/jfk.wav; do
+    "$HOME/whisper.cpp/samples/jfk.wav"; do
     if [[ -f "$candidate" ]]; then SAMPLE="$candidate"; break; fi
   done
 fi

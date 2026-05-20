@@ -40,11 +40,11 @@ if [[ ! -f "$MODEL_PATH" ]]; then
   echo "Error: model not found: $MODEL_PATH" >&2; exit 1
 fi
 
-TMP_BASE="$(mktemp -u /tmp/qwen3-asr-crisp.XXXXXX)"
-TMP_WAV="$(mktemp /tmp/qwen3-asr-in.XXXXXX.wav)"
-cleanup() {
-  rm -f "${TMP_BASE}.txt" "${TMP_BASE}.log" "$TMP_WAV"
-}
+# Use a secure temp directory (not mktemp -u) to avoid TOCTOU symlink attacks
+TMP_DIR="$(mktemp -d /tmp/qwen3-asr-crisp.XXXXXX)"
+TMP_BASE="$TMP_DIR/output"
+TMP_WAV="$TMP_DIR/input.wav"
+cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
 
 # Normalize to 16kHz mono WAV (parity with PyTorch path; CrispASR handles WAV natively)
@@ -68,7 +68,8 @@ EXTRA_ARGS=(
 )
 [[ "$NO_FALLBACK" == "1" ]] && EXTRA_ARGS+=( -nf )
 
-"$CRISP_BIN" "${EXTRA_ARGS[@]}" > "${TMP_BASE}.log" 2>&1
+# Allow crispasr to fail non-zero so we can report the log before exiting
+"$CRISP_BIN" "${EXTRA_ARGS[@]}" > "${TMP_BASE}.log" 2>&1 || true
 
 if [[ ! -s "${TMP_BASE}.txt" ]]; then
   echo "Error: CrispASR produced no transcript. Log:" >&2

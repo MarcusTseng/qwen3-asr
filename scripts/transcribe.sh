@@ -43,16 +43,22 @@ AUDIO=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --backend)   BACKEND="${2:-}";   shift 2 ;;
+    --backend)
+      [[ $# -lt 2 ]] && { echo "Error: --backend requires a value" >&2; exit 2; }
+      BACKEND="$2"; shift 2 ;;
     --backend=*) BACKEND="${1#--backend=}"; shift ;;
-    --language)  LANGUAGE="${2:-}";  shift 2 ;;
-    --language=*)LANGUAGE="${1#--language=}"; shift ;;
-    --output)    OUTPUT_FMT="${2:-}"; shift 2 ;;
-    --output=*)  OUTPUT_FMT="${1#--output=}"; shift ;;
-    -h|--help)   usage; exit 0 ;;
-    --)          shift; break ;;
-    -*)          echo "Error: unknown option: $1" >&2; usage; exit 2 ;;
-    *)           AUDIO="$1"; shift ;;
+    --language)
+      [[ $# -lt 2 ]] && { echo "Error: --language requires a value" >&2; exit 2; }
+      LANGUAGE="$2"; shift 2 ;;
+    --language=*) LANGUAGE="${1#--language=}"; shift ;;
+    --output)
+      [[ $# -lt 2 ]] && { echo "Error: --output requires a value" >&2; exit 2; }
+      OUTPUT_FMT="$2"; shift 2 ;;
+    --output=*) OUTPUT_FMT="${1#--output=}"; shift ;;
+    -h|--help)  usage; exit 0 ;;
+    --)         shift; break ;;
+    -*)         echo "Error: unknown option: $1" >&2; usage; exit 2 ;;
+    *)          AUDIO="$1"; shift ;;
   esac
 done
 
@@ -76,6 +82,15 @@ WHISPER_URL="${WHISPER_SERVER_URL:-http://localhost:8082/v1/audio/transcriptions
 # Export language for child scripts
 [[ -n "$LANGUAGE" ]] && export QWEN3_ASR_LANGUAGE="$LANGUAGE"
 
+# Single temp directory for all intermediate files.
+# Cleaned on EXIT (RETURN trap is bypassed by set -e exits; array-in-subshell
+# tracking is unreliable because $() forks a subshell where mutations are lost).
+_TMPDIR="$(mktemp -d /tmp/qwen3-asr.XXXXXX)"
+_cleanup() { rm -rf "$_TMPDIR"; }
+trap _cleanup EXIT
+
+_mktmp() { mktemp "$_TMPDIR/transcript.XXXXXX"; }
+
 _now_ms() { date +%s%3N 2>/dev/null || echo 0; }
 
 run_crisp() {
@@ -96,17 +111,25 @@ run_whisper() {
   curl -sS --max-time 300 -X POST "$WHISPER_URL" \
     -F "file=@$AUDIO" \
     -F "model=whisper-1" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get('text','').strip())"
+    | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('text', '').strip())
+except (json.JSONDecodeError, KeyError):
+    print('Error: whisper-server returned unexpected response', file=sys.stderr)
+    sys.exit(1)
+"
 }
 
+# Use Python json.dumps for all fields to prevent JSON injection
 _emit() {
   local text="$1" backend="$2" elapsed="$3"
   if [[ "$OUTPUT_FMT" == "json" ]]; then
-    # Escape text for JSON
-    local escaped
-    escaped="$(printf '%s' "$text" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")"
-    printf '{"text":%s,"language":"%s","backend":"%s","elapsed_ms":%s}\n' \
-      "$escaped" "${LANGUAGE:-}" "$backend" "$elapsed"
+    python3 -c '
+import sys, json
+text, lang, backend, elapsed = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+print(json.dumps({"text": text, "language": lang, "backend": backend, "elapsed_ms": int(elapsed)}))
+' "$text" "${LANGUAGE:-}" "$backend" "$elapsed"
   else
     printf '%s\n' "$text"
   fi
@@ -114,8 +137,7 @@ _emit() {
 
 run_auto() {
   local tmp status t0 t1 text
-  tmp="$(mktemp /tmp/qwen3-asr-transcript.XXXXXX)"
-  trap 'rm -f "$tmp"' RETURN
+  tmp="$(_mktmp)"
 
   echo "qwen3-asr: trying CrispASR backend" >&2
   t0="$(_now_ms)"
@@ -153,8 +175,7 @@ run_auto() {
 _run_named() {
   local backend="$1" fn="$2"
   local tmp t0 t1 text
-  tmp="$(mktemp /tmp/qwen3-asr-transcript.XXXXXX)"
-  trap 'rm -f "$tmp"' RETURN
+  tmp="$(_mktmp)"
   t0="$(_now_ms)"
   "$fn" >"$tmp"
   t1="$(_now_ms)"
