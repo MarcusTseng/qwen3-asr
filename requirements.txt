@@ -1,0 +1,3 @@
+qwen-asr
+opencc-python-reimplemented
+requests
