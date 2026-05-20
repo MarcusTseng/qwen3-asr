@@ -4,7 +4,7 @@
 # Stdout: transcript text only. Stderr: diagnostics.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 if [[ -f "$REPO_DIR/.env" ]]; then
