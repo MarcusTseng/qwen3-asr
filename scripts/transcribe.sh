@@ -19,11 +19,14 @@ fi
 usage() {
   cat >&2 <<'USAGE'
 Usage: transcribe.sh [OPTIONS] <audio_file>
+       transcribe.sh [OPTIONS] --url <youtube_or_audio_url>
 
 Options:
   --backend  auto|crisp|torch|whisper   Backend to use (default: auto)
   --language <lang>                     Language hint, e.g. zh, en, yue (default: auto-detect)
   --output   text|json                  Output format (default: text)
+  --url      <url>                      Download from YouTube, podcast RSS, or direct audio URL
+  --episodes <N>                        Max episodes to download from RSS/playlist (default: 1)
   -h, --help                            Show this help
 
 Environment overrides (also loadable via .env in repo root):
@@ -40,6 +43,8 @@ BACKEND="${QWEN3_ASR_BACKEND:-auto}"
 LANGUAGE="${QWEN3_ASR_LANGUAGE:-}"
 OUTPUT_FMT="${QWEN3_ASR_OUTPUT:-text}"
 AUDIO=""
+INPUT_URL=""
+EPISODES=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,6 +60,14 @@ while [[ $# -gt 0 ]]; do
       [[ $# -lt 2 ]] && { echo "Error: --output requires a value" >&2; exit 2; }
       OUTPUT_FMT="$2"; shift 2 ;;
     --output=*) OUTPUT_FMT="${1#--output=}"; shift ;;
+    --url)
+      [[ $# -lt 2 ]] && { echo "Error: --url requires a value" >&2; exit 2; }
+      INPUT_URL="$2"; shift 2 ;;
+    --url=*) INPUT_URL="${1#--url=}"; shift ;;
+    --episodes)
+      [[ $# -lt 2 ]] && { echo "Error: --episodes requires a value" >&2; exit 2; }
+      EPISODES="$2"; shift 2 ;;
+    --episodes=*) EPISODES="${1#--episodes=}"; shift ;;
     -h|--help)  usage; exit 0 ;;
     --)         shift; break ;;
     -*)         echo "Error: unknown option: $1" >&2; usage; exit 2 ;;
@@ -63,8 +76,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$AUDIO" && $# -gt 0 ]] && AUDIO="$1"
-[[ -z "$AUDIO" ]] && { usage; exit 2; }
-[[ ! -f "$AUDIO" ]] && { echo "Error: input audio not found: $AUDIO" >&2; exit 2; }
+[[ -z "$AUDIO" && -z "$INPUT_URL" ]] && { usage; exit 2; }
+[[ -n "$AUDIO" && ! -f "$AUDIO" ]] && { echo "Error: input audio not found: $AUDIO" >&2; exit 2; }
 
 case "$BACKEND" in
   auto|crisp|torch|whisper) ;;
@@ -183,6 +196,37 @@ _run_named() {
   _emit "$text" "$backend" "$((t1 - t0))"
 }
 
+# --- URL download mode ---
+if [[ -n "$INPUT_URL" ]]; then
+  DL_DIR="$_TMPDIR/dl"
+  mkdir -p "$DL_DIR"
+  echo "qwen3-asr: downloading audio from URL ..." >&2
+
+  mapfile -t _DL_FILES < <(
+    "$SCRIPT_DIR/download.sh" \
+      --output-dir "$DL_DIR" \
+      --episodes "$EPISODES" \
+      "$INPUT_URL"
+  )
+
+  if [[ ${#_DL_FILES[@]} -eq 0 ]]; then
+    echo "Error: download produced no audio files from: $INPUT_URL" >&2
+    exit 1
+  fi
+
+  for AUDIO in "${_DL_FILES[@]}"; do
+    echo "qwen3-asr: transcribing $(basename "$AUDIO") ..." >&2
+    case "$BACKEND" in
+      auto)    run_auto ;;
+      crisp)   _run_named crisp run_crisp ;;
+      torch)   _run_named torch run_torch ;;
+      whisper) _run_named whisper run_whisper ;;
+    esac
+  done
+  exit 0
+fi
+
+# --- Single local file mode ---
 case "$BACKEND" in
   auto)    run_auto ;;
   crisp)   _run_named crisp run_crisp ;;

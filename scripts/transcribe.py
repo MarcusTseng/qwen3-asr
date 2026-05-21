@@ -83,16 +83,27 @@ if not os.path.exists(audio_file):
 # Language hint from environment (set by transcribe.sh or user)
 language_hint = os.environ.get('QWEN3_ASR_LANGUAGE') or None
 
+# Model selection: default 1.7B for best accuracy; override via env for lighter load
+_model_id = os.environ.get('QWEN3_ASR_TORCH_MODEL', 'Qwen/Qwen3-ASR-1.7B')
+
+# Device: 'auto' picks ROCm/CUDA if available, falls back to CPU
+_device_map = os.environ.get('QWEN3_ASR_TORCH_DEVICE', 'auto')
+
 try:
+    import torch
     from qwen_asr import Qwen3ASRModel
 
     warnings.filterwarnings('ignore')
     logging.getLogger('transformers').setLevel(logging.ERROR)
 
+    _dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
     model = Qwen3ASRModel.from_pretrained(
-        'Qwen/Qwen3-ASR-0.6B',
-        device_map='cpu',
+        _model_id,
+        device_map=_device_map,
+        torch_dtype=_dtype,
         trust_remote_code=True,
+        max_new_tokens=4096,
     )
 
     results = model.transcribe(audio_file, language=language_hint)

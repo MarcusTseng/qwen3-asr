@@ -17,15 +17,16 @@ INPUT_FILE="${1:-}"
 MODEL_PATH="${QWEN3_ASR_CRISP_MODEL:-$REPO_DIR/models/qwen3-asr-1.7b-q8_0.gguf}"
 CRISP_BIN="${QWEN3_ASR_CRISP_BIN:-$REPO_DIR/bin/crispasr}"
 QWEN_VENV_PY="${QWEN3_ASR_VENV_PY:-${QWEN3_ASR_VENV:-$REPO_DIR/venv}/bin/python}"
-LANGUAGE="${QWEN3_ASR_LANGUAGE:-zh}"
+LANGUAGE="${QWEN3_ASR_LANGUAGE:-auto}"
 GPU_BACKEND="${QWEN3_ASR_GPU_BACKEND:-vulkan}"
 DEVICE="${QWEN3_ASR_DEVICE:-0}"
 THREADS="${QWEN3_ASR_THREADS:-4}"
 CONVERT_TRADITIONAL="${QWEN3_ASR_TRADITIONAL:-1}"
 BEST_OF="${QWEN3_ASR_BEST_OF:-2}"
-BEAM_SIZE="${QWEN3_ASR_BEAM_SIZE:-2}"
-MAX_NEW_TOKENS="${QWEN3_ASR_MAX_NEW_TOKENS:-384}"
+BEAM_SIZE="${QWEN3_ASR_BEAM_SIZE:-5}"
+MAX_NEW_TOKENS="${QWEN3_ASR_MAX_NEW_TOKENS:-4096}"
 NO_FALLBACK="${QWEN3_ASR_NO_FALLBACK:-1}"
+VAD="${QWEN3_ASR_VAD:-1}"
 
 if [[ -z "$INPUT_FILE" ]]; then
   echo "Usage: $0 <audio_file>" >&2; exit 1
@@ -67,6 +68,7 @@ EXTRA_ARGS=(
   -of "$TMP_BASE"
 )
 [[ "$NO_FALLBACK" == "1" ]] && EXTRA_ARGS+=( -nf )
+[[ "$VAD"         == "1" ]] && EXTRA_ARGS+=( --vad )
 
 # Allow crispasr to fail non-zero so we can report the log before exiting
 "$CRISP_BIN" "${EXTRA_ARGS[@]}" > "${TMP_BASE}.log" 2>&1 || true

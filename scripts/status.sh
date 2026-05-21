@@ -59,7 +59,10 @@ fi
 
 echo
 echo "--- Whisper-server fallback ---"
-if curl -sf --max-time 3 "$WHISPER_URL" -o /dev/null 2>/dev/null; then
+# Derive server root from the transcription URL (strip /v1/audio/transcriptions)
+_WHISPER_ROOT="$(echo "$WHISPER_URL" | sed 's|/v1/audio/transcriptions.*||')"
+if curl -sf --max-time 3 "${_WHISPER_ROOT}/health" -o /dev/null 2>/dev/null \
+   || curl -sf --max-time 3 "$_WHISPER_ROOT/" -o /dev/null 2>/dev/null; then
   printf 'OK   %-30s %s\n' "whisper-server" "$WHISPER_URL"
 else
   printf 'MISS %-30s %s (not reachable)\n' "whisper-server" "$WHISPER_URL"
@@ -76,4 +79,10 @@ if command -v curl >/dev/null 2>&1; then
   printf 'OK   %-30s %s\n' "curl" "$(command -v curl)"
 else
   printf 'MISS %-30s not found in PATH\n' "curl"
+fi
+_YTDLP="${QWEN3_ASR_YTDLP:-yt-dlp}"
+if command -v "$_YTDLP" >/dev/null 2>&1; then
+  printf 'OK   %-30s %s\n' "yt-dlp" "$(command -v "$_YTDLP")"
+else
+  printf 'MISS %-30s not found (needed for --url)\n' "yt-dlp"
 fi
