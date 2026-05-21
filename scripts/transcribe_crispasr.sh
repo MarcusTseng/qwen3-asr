@@ -79,13 +79,22 @@ if [[ ! -s "${TMP_BASE}.txt" ]]; then
   exit 1
 fi
 
-if [[ "$CONVERT_TRADITIONAL" == "1" && -x "$QWEN_VENV_PY" ]]; then
-  "$QWEN_VENV_PY" -c '
+# Pick the best available Python: prefer venv, fall back to system python3.
+_OPENCC_PY=""
+if [[ -x "$QWEN_VENV_PY" ]]; then
+  _OPENCC_PY="$QWEN_VENV_PY"
+elif command -v python3 >/dev/null 2>&1; then
+  _OPENCC_PY="python3"
+fi
+
+if [[ "$CONVERT_TRADITIONAL" == "1" && -n "$_OPENCC_PY" ]]; then
+  # s2twp: Simplified → Traditional (Taiwan), fixes 发现→發現 (not 髮現)
+  "$_OPENCC_PY" -c '
 import sys
 text = sys.stdin.read()
 try:
     from opencc import OpenCC
-    print(OpenCC("s2t").convert(text), end="")
+    print(OpenCC("s2twp").convert(text), end="")
 except Exception:
     print(text, end="")
 ' < "${TMP_BASE}.txt"
