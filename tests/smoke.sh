@@ -25,7 +25,12 @@ run_test() {
   echo -n "  $label ... "
   local out
   if out="$(QWEN3_ASR_BACKEND="$backend" "$TRANSCRIBE" "$SAMPLE" 2>/dev/null)"; then
-    if echo "$out" | grep -qi "ask not what"; then
+    if python3 - "$out" <<'PY'
+import re, sys
+text = sys.argv[1].lower()
+sys.exit(0 if re.search(r"ask not\W+what", text) else 1)
+PY
+    then
       echo "PASS"
       PASS=$((PASS + 1))
     else

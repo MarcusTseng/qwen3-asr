@@ -14,7 +14,8 @@
 #   --model MODEL        Model to use (default: first model from /v1/models)
 #   --context TEXT       Domain context hint for the LLM
 #   --summary            Also output a summary section
-#   --raw                Skip LLM step, only apply corrections TSV
+#   --raw                Skip LLM step; only run deterministic cleanup/corrections
+#   --no-deterministic   Skip deterministic cleanup (OpenCC/fillers/dictionary)
 #   -o FILE              Write to file instead of stdout
 set -euo pipefail
 
@@ -31,6 +32,7 @@ CORRECTIONS_FILE="${QWEN3_POST_CORRECTIONS:-}"
 CONTEXT="${QWEN3_POST_CONTEXT:-}"
 DO_SUMMARY=0
 RAW_ONLY=0
+DETERMINISTIC=1
 OUT_FILE=""
 INPUT_FILE=""
 
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --context=*)     CONTEXT="${1#--context=}"; shift ;;
     --summary)       DO_SUMMARY=1; shift ;;
     --raw)           RAW_ONLY=1; shift ;;
+    --no-deterministic) DETERMINISTIC=0; shift ;;
     -o)              OUT_FILE="$2"; shift 2 ;;
     -o*)             OUT_FILE="${1#-o}"; shift ;;
     -h|--help)       usage; exit 0 ;;
@@ -78,29 +81,22 @@ if [[ -z "$CORRECTIONS_FILE" ]]; then
   done
 fi
 
-# Apply corrections TSV (tab-separated: wrong<TAB>correct, # = comment)
-apply_corrections() {
-  local text="$1" tsv="$2"
-  python3 - "$tsv" <<'PYEOF'
-import sys, re
-tsv = sys.argv[1]
-text = sys.stdin.read()
-with open(tsv) as f:
-    for line in f:
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        parts = line.split('\t', 1)
-        if len(parts) == 2:
-            wrong, correct = parts
-            text = text.replace(wrong, correct)
-print(text, end='')
-PYEOF
-}
-
-if [[ -n "$CORRECTIONS_FILE" && -f "$CORRECTIONS_FILE" ]]; then
-  echo "post_process: applying corrections from $CORRECTIONS_FILE" >&2
-  TEXT="$(echo "$TEXT" | apply_corrections /dev/stdin "$CORRECTIONS_FILE")"
+# Deterministic cleanup inspired by HushType:
+# OpenCC s2twp (when available), filler cleanup, duplicate collapse, and a
+# HushType-style longest-first non-cascading dictionary/corrections pass.
+if [[ "$DETERMINISTIC" == "1" ]]; then
+  _TMP_DET="$(mktemp /tmp/qwen3-deterministic.XXXXXX)"
+  printf '%s' "$TEXT" > "$_TMP_DET"
+  CLEAN_ARGS=("$SCRIPT_DIR/clean_transcript.py")
+  if [[ -n "$CORRECTIONS_FILE" && -f "$CORRECTIONS_FILE" ]]; then
+    echo "post_process: applying deterministic cleanup and corrections from $CORRECTIONS_FILE" >&2
+    CLEAN_ARGS+=(--corrections "$CORRECTIONS_FILE")
+  else
+    echo "post_process: applying deterministic cleanup" >&2
+  fi
+  CLEAN_ARGS+=("$_TMP_DET")
+  TEXT="$(python3 "${CLEAN_ARGS[@]}")"
+  rm -f "$_TMP_DET"
 fi
 
 if [[ "$RAW_ONLY" == "1" ]]; then
@@ -124,7 +120,7 @@ SYSTEM_PROMPT="你是一個專業的繁體中文播客謄寫編輯。
 
 規則：
 1. 保持所有實質內容，不要刪除或改寫意思。
-2. 修正明顯的同音字錯誤（例如「骨癌」→「股癌」，「股癌」是一個知名台灣財經播客節目名稱）。
+2. 修正明顯的 ASR 錯字；優先相信前置 deterministic cleanup / corrections.tsv 已完成的專有名詞修正，不要自行引入未提供的節目或人名。
 3. 加入適當的段落分隔（對話主題轉換時換行）。
 4. 修正標點符號（漏掉的句號、問號、逗號等）。
 5. 英文和數字保持原樣。

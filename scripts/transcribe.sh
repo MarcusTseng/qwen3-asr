@@ -117,17 +117,22 @@ run_torch() {
 }
 
 run_whisper() {
-  if ! curl -sf --max-time 5 "$WHISPER_URL" -o /dev/null 2>/dev/null; then
-    echo "whisper-server not reachable at $WHISPER_URL" >&2
-    return 1
-  fi
-  curl -sS --max-time 300 -X POST "$WHISPER_URL" \
-    -F "file=@$AUDIO" \
-    -F "model=whisper-1" \
-    | python3 -c "
+  local curl_args=(
+    -sS --max-time 300 -X POST "$WHISPER_URL"
+    -F "file=@$AUDIO"
+    -F "model=whisper-1"
+    -F "response_format=json"
+  )
+  [[ -n "$LANGUAGE" ]] && curl_args+=( -F "language=$LANGUAGE" )
+
+  curl "${curl_args[@]}" | python3 -c "
 import sys, json
 try:
-    print(json.load(sys.stdin).get('text', '').strip())
+    text = json.load(sys.stdin).get('text', '').strip()
+    if not text:
+        print('Error: whisper-server returned empty transcript', file=sys.stderr)
+        sys.exit(1)
+    print(text)
 except (json.JSONDecodeError, KeyError):
     print('Error: whisper-server returned unexpected response', file=sys.stderr)
     sys.exit(1)
