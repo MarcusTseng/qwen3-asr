@@ -214,7 +214,13 @@ if [[ -n "$INPUT_URL" ]]; then
     exit 1
   fi
 
+  _EP_IDX=0
   for AUDIO in "${_DL_FILES[@]}"; do
+    # Print a separator between episodes so multi-episode output isn't a wall of text
+    if [[ $_EP_IDX -gt 0 ]]; then
+      printf '\n\n=== %s ===\n\n' "$(basename "$AUDIO" .wav)"
+    fi
+    _EP_IDX=$((_EP_IDX + 1))
     echo "qwen3-asr: transcribing $(basename "$AUDIO") ..." >&2
     case "$BACKEND" in
       auto)    run_auto ;;

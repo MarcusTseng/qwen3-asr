@@ -71,9 +71,9 @@ fi
 echo
 echo "--- Tools ---"
 if command -v ffmpeg >/dev/null 2>&1; then
-  printf 'OK   %-30s %s\n' "ffmpeg" "$(command -v ffmpeg)"
+  printf 'OK   %-30s %s\n' "ffmpeg (audio norm + yt-dlp post)" "$(command -v ffmpeg)"
 else
-  printf 'MISS %-30s not found in PATH\n' "ffmpeg"
+  printf 'MISS %-30s not found in PATH\n' "ffmpeg (audio norm + yt-dlp post)"
 fi
 if command -v curl >/dev/null 2>&1; then
   printf 'OK   %-30s %s\n' "curl" "$(command -v curl)"

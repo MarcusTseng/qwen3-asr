@@ -43,6 +43,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# BUG FIX: capture URL from remaining positional arg after `--` separator
+[[ -z "$URL" && $# -gt 0 ]] && { URL="$1"; shift; }
+
 [[ -z "$URL" ]]        && { echo "Usage: $0 --output-dir <dir> [--episodes N] <url>" >&2; exit 2; }
 [[ -z "$OUTPUT_DIR" ]] && { echo "Error: --output-dir is required" >&2; exit 2; }
 [[ ! -d "$OUTPUT_DIR" ]] && { echo "Error: output directory does not exist: $OUTPUT_DIR" >&2; exit 2; }
@@ -72,7 +75,16 @@ else
   YTDLP_ARGS+=(--no-playlist)
 fi
 
-"$YT_DLP" "${YTDLP_ARGS[@]}" "$URL" >&2
+# Snapshot pre-existing WAVs so we only report files downloaded this run
+declare -A _PRE_WAV
+while IFS= read -r f; do _PRE_WAV["$f"]=1; done < <(
+  find "$OUTPUT_DIR" -maxdepth 1 -name "*.wav" -print 2>/dev/null
+)
 
-# Print downloaded WAV paths to stdout for the caller to consume
-find "$OUTPUT_DIR" -maxdepth 1 -name "*.wav" -print | sort
+# `--` prevents a URL that starts with `-` from being parsed as a yt-dlp flag
+"$YT_DLP" "${YTDLP_ARGS[@]}" -- "$URL" >&2
+
+# Print only newly downloaded WAV paths
+while IFS= read -r f; do
+  [[ -z "${_PRE_WAV[$f]+x}" ]] && printf '%s\n' "$f"
+done < <(find "$OUTPUT_DIR" -maxdepth 1 -name "*.wav" -print | sort)

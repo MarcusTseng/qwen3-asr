@@ -36,7 +36,8 @@ def is_english_language(lang: str) -> bool:
 
 def to_traditional_chinese(text: str) -> str:
     from opencc import OpenCC
-    return OpenCC('s2t').convert(text)
+    # s2twp: Taiwan-optimized — fixes 发现→發現 (not 髮現) and other homophones
+    return OpenCC('s2twp').convert(text)
 
 
 def translate_with_whisper_server(audio_file: str) -> str:
@@ -96,7 +97,19 @@ try:
     warnings.filterwarnings('ignore')
     logging.getLogger('transformers').setLevel(logging.ERROR)
 
-    _dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+    # bfloat16 requires native HW support — not just CUDA availability.
+    # Older GPUs and some AMD ROCm targets silently fall back to float32 emulation
+    # which is slow. Check is_bf16_supported() when available (torch >= 1.10).
+    def _pick_dtype() -> torch.dtype:
+        if not torch.cuda.is_available():
+            return torch.float32
+        try:
+            if torch.cuda.is_bf16_supported():
+                return torch.bfloat16
+        except AttributeError:
+            pass
+        return torch.float32
+    _dtype = _pick_dtype()
 
     model = Qwen3ASRModel.from_pretrained(
         _model_id,

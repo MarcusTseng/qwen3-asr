@@ -32,13 +32,19 @@ if [[ "$_install_rocm" == "1" ]]; then
   "$PIP" install --quiet \
     torch torchvision torchaudio \
     --index-url "https://download.pytorch.org/whl/$ROCM_VERSION"
+
+  # Freeze the ROCm torch versions as constraints so requirements.txt cannot
+  # silently downgrade or replace them with a non-ROCm build.
+  _TORCH_CONSTRAINTS="$VENV_DIR/torch-constraints.txt"
+  "$PIP" freeze | grep -iE "^(torch|torchvision|torchaudio)==" > "$_TORCH_CONSTRAINTS"
+  echo "Installing qwen-asr and dependencies (constrained by $_TORCH_CONSTRAINTS) ..."
+  "$PIP" install -r "$REPO_DIR/requirements.txt" --constraint "$_TORCH_CONSTRAINTS" --quiet
 else
   echo "Installing PyTorch (CPU) ..."
   "$PIP" install --quiet torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+  echo "Installing qwen-asr and dependencies ..."
+  "$PIP" install -r "$REPO_DIR/requirements.txt" --quiet
 fi
-
-echo "Installing qwen-asr and dependencies ..."
-"$PIP" install -r "$REPO_DIR/requirements.txt" --quiet
 
 echo
 echo "Done. Venv ready at: $VENV_DIR"
