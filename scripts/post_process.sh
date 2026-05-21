@@ -137,12 +137,21 @@ if [[ "$DO_SUMMARY" == "1" ]]; then
 7. 在文末加一個「---」分隔線，然後用繁體中文寫 3-5 條重點摘要，以 • 開頭。"
 fi
 
-# Call local LLM
-RESULT="$(python3 - "$API_BASE" "$MODEL" "$SYSTEM_PROMPT" <<'PYEOF'
+# Write transcript to temp file so stdin is free for the Python heredoc.
+# (bash: heredoc for `python3 -` and `< <(...)` both compete for the same
+#  stdin — the heredoc wins and the process substitution is silently ignored.)
+_TMP_TEXT="$(mktemp /tmp/qwen3-post.XXXXXX)"
+printf '%s' "$TEXT" > "$_TMP_TEXT"
+_cleanup_tmp() { rm -f "$_TMP_TEXT"; }
+trap _cleanup_tmp EXIT
+
+# Call local LLM — reads transcript from file (argv[4]), not stdin
+RESULT="$(python3 - "$API_BASE" "$MODEL" "$SYSTEM_PROMPT" "$_TMP_TEXT" <<'PYEOF'
 import sys, json, urllib.request, urllib.error
 
-api_base, model, system_prompt = sys.argv[1], sys.argv[2], sys.argv[3]
-user_text = sys.stdin.read()
+api_base, model, system_prompt, text_file = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(text_file) as f:
+    user_text = f.read()
 
 payload = json.dumps({
     "model": model,
@@ -160,14 +169,14 @@ req = urllib.request.Request(
     headers={"Content-Type": "application/json"},
 )
 try:
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    with urllib.request.urlopen(req, timeout=600) as resp:
         data = json.load(resp)
         print(data["choices"][0]["message"]["content"], end="")
 except urllib.error.URLError as e:
     print(f"Error: LLM API call failed: {e}", file=sys.stderr)
     sys.exit(1)
 PYEOF
-)" < <(printf '%s' "$TEXT")
+)"
 
 if [[ -n "$OUT_FILE" ]]; then
   printf '%s\n' "$RESULT" > "$OUT_FILE"
