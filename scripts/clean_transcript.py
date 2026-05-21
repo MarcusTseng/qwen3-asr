@@ -171,26 +171,44 @@ def parse_entries(path: Path) -> list[Entry]:
 
 
 def apply_dictionary(text: str, entries: list[Entry]) -> str:
-    """HushType-style longest-first, single-pass, non-cascading replacement."""
+    """HushType-style longest-first, single-pass, non-cascading replacement.
+
+    Walks the string left-to-right consuming characters. When a dict entry matches
+    at the current position, appends the target and advances by len(source) —
+    NOT len(target) — which preserves non-cascading semantics: each source character
+    is output at most once even when source and target differ in length.
+
+    Word-boundary lookbehind (?<![A-Za-z]) prevents a short pattern (e.g. "Xperia")
+    from matching as the tail of a longer one (e.g. "Nexperia"). [A-Za-z] is used
+    instead of \\w to avoid Python's Unicode \\w issue in IGNORECASE mode where
+    CJK chars count as \\w and break matches before CJK characters.
+    """
     if not entries:
         return text
-    out: list[str] = []
+    result = ""
     i = 0
     n = len(text)
     while i < n:
-        matched: Entry | None = None
+        matched_entry: Entry | None = None
         for entry in entries:
             end = i + len(entry.source)
-            if end <= n and text[i:end].casefold() == entry.source.casefold():
-                matched = entry
-                break
-        if matched:
-            out.append(matched.target)
-            i += len(matched.source)
+            if end <= n:
+                segment = text[i:end]
+                # (?<![A-Za-z]) word-boundary lookbehind: reject if preceded by a letter.
+                # This stops "xperia" matching inside "Nexperia" (preceded by "e").
+                # Prepending (?<!...) to segment and checking the lookbehind position
+                # in the original text is equivalent to the pattern-level assertion.
+                preceded_by_letter = (i > 0 and text[i - 1].casefold() in "abcdefghijklmnopqrstuvwxyz")
+                if segment.casefold() == entry.source.casefold() and not preceded_by_letter:
+                    matched_entry = entry
+                    break
+        if matched_entry:
+            result += matched_entry.target
+            i += len(matched_entry.source)
         else:
-            out.append(text[i])
+            result += text[i]
             i += 1
-    return "".join(out)
+    return result
 
 
 def clean(text: str, args: argparse.Namespace) -> str:
