@@ -1,0 +1,12 @@
+# corrections.tsv — domain-specific ASR correction pairs for 股癌 (Gooaye) podcast
+# Format: wrong<TAB>correct
+# Lines starting with # are comments.
+# Applied by post_process.sh before LLM cleanup.
+# Add verified errors here as you review transcripts.
+#
+# ── Podcast proper nouns ─────────────────────────────────────────────────────
+骨癌	股癌
+# ── Common finance homophones ────────────────────────────────────────────────
+# (add verified errors here after reviewing ep601 transcript)
+# e.g.:
+# 台股大盤	台股大盤   (placeholder — remove/replace with real errors)
